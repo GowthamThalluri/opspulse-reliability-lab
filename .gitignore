@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Formatting and linting
+.ruff_cache/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
