@@ -57,9 +57,34 @@ services:
     networks:
       - opspulse
 
+  grafana:
+    image: grafana/grafana:13.3.0
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+    restart: unless-stopped
+
+    networks:
+      - opspulse
+
 networks:
   opspulse:
     driver: bridge
 
 volumes:
   prometheus_data:
+  grafana_data:
