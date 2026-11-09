@@ -156,6 +156,25 @@ services:
 
     networks:
       - opspulse
+  
+  # 7. Linux host monitoring
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.12.1
+
+    command:
+      - "--path.rootfs=/host"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+
+    volumes:
+      - /:/host:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+    restart: unless-stopped
+
+    networks:
+      - opspulse
 
 
 # Shared internal Docker network
