@@ -6,68 +6,51 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-
     image: opspulse-api:1.0
-
     ports:
       - "127.0.0.1:8001:8000"
-
     restart: unless-stopped
     init: true
     read_only: true
-
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
-
     cap_drop:
       - ALL
-
     security_opt:
       - no-new-privileges:true
-
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
     networks:
       - opspulse
 
   prometheus:
     image: prom/prometheus:v3.16.0
-
     ports:
       - "127.0.0.1:9090:9090"
-
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-
     restart: unless-stopped
-
     depends_on:
       api:
         condition: service_healthy
-
     networks:
       - opspulse
 
   grafana:
     image: grafana/grafana:13.3.0
-
     ports:
       - "127.0.0.1:3000:3000"
-
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
-
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
@@ -75,9 +58,40 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
-
+      - loki
     restart: unless-stopped
+    networks:
+      - opspulse
 
+  loki:
+    image: grafana/loki:3.6.20
+    command:
+      - "-config.file=/etc/loki/loki-config.yaml"
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+    networks:
+      - opspulse
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    command:
+      - run
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - /etc/alloy/config.alloy
+    ports:
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    restart: unless-stopped
     networks:
       - opspulse
 
@@ -88,3 +102,5 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  loki_data:
+  alloy_data:
