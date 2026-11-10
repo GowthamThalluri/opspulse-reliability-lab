@@ -192,3 +192,63 @@ jobs:
       - name: Clean up test container
         if: always()
         run: docker rm -f opspulse-api-ci || true
+
+  # Job 4: Python, dependency, secret and image security scanning
+  security-scanning:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout full Git history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install security scanning dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      # Scan Python source code
+      - name: Run Bandit security scan
+        run: bandit -r app automation -ll
+
+      # Audit runtime and development dependencies
+      - name: Run pip-audit dependency scan
+        run: pip-audit -r requirements-dev.txt
+
+      # Scan Git history for accidentally committed secrets
+      - name: Run Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+      # Build an image specifically for security scanning
+      - name: Build image for Trivy scanning
+        run: |
+          docker build --pull \
+            --tag opspulse-api:security .
+
+      # Fail on fixable HIGH and CRITICAL image vulnerabilities
+      - name: Run Trivy image vulnerability scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: opspulse-api:security
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln

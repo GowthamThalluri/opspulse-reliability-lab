@@ -1,12 +1,11 @@
 import json
-from urllib.error import HTTPError
+from unittest.mock import Mock
 
 import pytest
 
 from automation import collect_diagnostics
 from automation.collect_diagnostics import (
     REQUIRED_SERVICES,
-    check_api_endpoint,
     check_services,
 )
 
@@ -97,24 +96,16 @@ def test_unhealthy_container_is_detected(healthy_containers):
 def test_api_endpoint_returns_200(monkeypatch):
     """HTTP 200 should produce a healthy API result."""
 
-    class FakeResponse:
-        status = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_value, traceback):
-            return False
-
-    def fake_urlopen(request, timeout):
-        return FakeResponse()
+    fake_response = Mock()
+    fake_response.status_code = 200
 
     monkeypatch.setattr(
-        "automation.collect_diagnostics.urlopen",
-        fake_urlopen,
+        collect_diagnostics.requests,
+        "get",
+        lambda *args, **kwargs: fake_response,
     )
 
-    result = check_api_endpoint("/health/live")
+    result = collect_diagnostics.check_api_endpoint("/health/live")
 
     assert result["status"] == "healthy"
     assert result["http_status"] == 200
@@ -122,23 +113,18 @@ def test_api_endpoint_returns_200(monkeypatch):
 
 
 def test_api_endpoint_returns_http_error(monkeypatch):
-    """An HTTP error must produce an unhealthy API result."""
+    """HTTP 503 should produce an unhealthy API result."""
 
-    def fake_urlopen(request, timeout):
-        raise HTTPError(
-            url=request.full_url,
-            code=503,
-            msg="Service Unavailable",
-            hdrs=None,
-            fp=None,
-        )
+    fake_response = Mock()
+    fake_response.status_code = 503
 
     monkeypatch.setattr(
-        "automation.collect_diagnostics.urlopen",
-        fake_urlopen,
+        collect_diagnostics.requests,
+        "get",
+        lambda *args, **kwargs: fake_response,
     )
 
-    result = check_api_endpoint("/health/ready")
+    result = collect_diagnostics.check_api_endpoint("/health/ready")
 
     assert result["status"] == "unhealthy"
     assert result["http_status"] == 503
@@ -210,3 +196,28 @@ def test_main_generates_json_report(
 
     assert len(report["services"]) == 7
     assert len(report["api_checks"]) == 2
+
+
+def test_api_endpoint_rejects_file_scheme(monkeypatch):
+    """Local file URLs must never be accepted as API endpoints."""
+
+    monkeypatch.setattr(
+        collect_diagnostics,
+        "API_BASE_URL",
+        "file:///etc",
+    )
+
+    request_mock = Mock()
+
+    monkeypatch.setattr(
+        collect_diagnostics.requests,
+        "get",
+        request_mock,
+    )
+
+    result = collect_diagnostics.check_api_endpoint("/passwd")
+
+    assert result["status"] == "unhealthy"
+    assert result["http_status"] is None
+    assert "HTTP/HTTPS" in result["error"]
+    request_mock.assert_not_called()

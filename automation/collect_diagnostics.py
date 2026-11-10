@@ -8,8 +8,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+
+import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -182,26 +183,53 @@ def check_services(
 
 
 def check_api_endpoint(endpoint: str) -> dict[str, Any]:
-    """Send an HTTP GET request to an API health endpoint."""
+    """Check an API endpoint using HTTP or HTTPS only."""
 
     url = f"{API_BASE_URL}{endpoint}"
+
+    # Reject unsupported schemes and URLs without a hostname.
+    try:
+        parsed_url = urlsplit(url)
+
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.hostname
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+        ):
+            return {
+                "endpoint": endpoint,
+                "status": "unhealthy",
+                "http_status": None,
+                "error": "Only HTTP/HTTPS URLs with a hostname are permitted.",
+            }
+
+    except ValueError as error:
+        return {
+            "endpoint": endpoint,
+            "status": "unhealthy",
+            "http_status": None,
+            "error": str(error),
+        }
+
     start_time = time.perf_counter()
 
     try:
-        request = Request(
+        response = requests.get(
             url,
             headers={
                 "User-Agent": "OpsPulse-Diagnostics/1.0",
             },
+            timeout=5,
+            allow_redirects=False,
         )
-
-        with urlopen(request, timeout=5) as response:
-            status_code = response.status
 
         latency_ms = round(
             (time.perf_counter() - start_time) * 1000,
             2,
         )
+
+        status_code = response.status_code
 
         return {
             "endpoint": endpoint,
@@ -210,15 +238,7 @@ def check_api_endpoint(endpoint: str) -> dict[str, Any]:
             "latency_ms": latency_ms,
         }
 
-    except HTTPError as error:
-        return {
-            "endpoint": endpoint,
-            "status": "unhealthy",
-            "http_status": error.code,
-            "error": str(error.reason),
-        }
-
-    except (URLError, TimeoutError, OSError) as error:
+    except requests.RequestException as error:
         return {
             "endpoint": endpoint,
             "status": "unhealthy",
