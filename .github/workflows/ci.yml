@@ -1,0 +1,194 @@
+
+name: OpsPulse CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Job 1: Python linting, formatting and automated tests
+  python-quality:
+    name: Python Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run Ruff lint
+        run: python -m ruff check app automation tests
+
+      - name: Check Python formatting
+        run: python -m ruff format --check app automation tests
+
+      - name: Run automated tests
+        run: python -m pytest -v
+
+
+  # Job 2: Prometheus, Alertmanager and Docker Compose validation
+  observability-validation:
+    name: Observability Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Disposable CI value; never use the real Grafana password here.
+      GRAFANA_ADMIN_PASSWORD: ci-validation-only-password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+      - name: Validate Prometheus configuration
+        run: |
+          docker run --rm \
+            -v "$PWD/observability/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.16.0 \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: Validate Prometheus alert rules
+        run: |
+          docker run --rm \
+            -v "$PWD/observability/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.16.0 \
+            check rules /etc/prometheus/alerts/opspulse-alerts.yml
+
+      - name: Test Prometheus alert rules
+        run: |
+          docker run --rm \
+            -v "$PWD/observability/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.16.0 \
+            test rules /etc/prometheus/tests/opspulse-alerts.test.yml
+
+      - name: Validate Alertmanager configuration
+        run: |
+          docker run --rm \
+            -v "$PWD/observability/alertmanager:/etc/alertmanager:ro" \
+            --entrypoint amtool \
+            prom/alertmanager:v0.35.0 \
+            check-config /etc/alertmanager/alertmanager.yml
+
+
+  # Job 3: Build and smoke-test the API Docker image
+  docker-build:
+    name: Docker Build and Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build OpsPulse API image
+        run: |
+          docker build --pull \
+            --tag opspulse-api:ci .
+
+      - name: Start API container with security settings
+        run: |
+          docker run --detach \
+            --name opspulse-api-ci \
+            --publish 127.0.0.1:8001:8000 \
+            --init \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            opspulse-api:ci
+
+      - name: Verify API health endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ready=false
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent \
+              http://127.0.0.1:8001/health/live; then
+              ready=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "API failed to become ready."
+            docker logs opspulse-api-ci
+            exit 1
+          fi
+
+          curl --fail --show-error \
+            http://127.0.0.1:8001/health/ready
+
+          curl --fail --show-error \
+            http://127.0.0.1:8001/
+
+      - name: Verify Docker health status
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          healthy=false
+
+          for attempt in $(seq 1 45); do
+            status=$(docker inspect \
+              --format '{{.State.Health.Status}}' \
+              opspulse-api-ci)
+
+            echo "Docker health: $status"
+
+            if [ "$status" = "healthy" ]; then
+              healthy=true
+              break
+            fi
+
+            if [ "$status" = "unhealthy" ]; then
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [ "$healthy" != "true" ]; then
+            echo "Docker health verification failed."
+            docker logs opspulse-api-ci
+            exit 1
+          fi
+
+          echo "Docker health verification passed."
+
+      - name: Clean up test container
+        if: always()
+        run: docker rm -f opspulse-api-ci || true
