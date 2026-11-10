@@ -54,6 +54,7 @@ services:
 
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
 
     command:
@@ -68,7 +69,25 @@ services:
 
     networks:
       - opspulse
+  # Alertmanager: receives and manages Prometheus alerts
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
 
+    ports:
+      - "127.0.0.1:9093:9093"
+
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+
+    restart: unless-stopped
+
+    networks:
+      - opspulse
 
   # 3. Grafana dashboards and visualization
   grafana:
@@ -189,3 +208,4 @@ volumes:
   grafana_data:
   loki_data:
   alloy_data:
+  alertmanager_data:

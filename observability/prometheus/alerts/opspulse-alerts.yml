@@ -1,0 +1,96 @@
+groups:
+  - name: opspulse-api-alerts
+    interval: 15s
+    rules:
+
+      # Alert 1: API is unavailable
+      - alert: OpsPulseAPIDown
+        expr: up{job="opspulse-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "OpsPulse API is down"
+          description: "Prometheus cannot scrape the OpsPulse API metrics endpoint."
+
+      # Alert 2: HTTP 5xx error rate exceeds 5%
+      - alert: OpsPulseHigh5xxErrorRate
+        expr: |
+          (
+            (
+              sum(rate(opspulse_http_requests_total{job="opspulse-api", status_code=~"5.."}[5m]))
+              or vector(0)
+            )
+            /
+            clamp_min(
+              sum(rate(opspulse_http_requests_total{job="opspulse-api"}[5m])),
+              0.001
+            )
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: reliability
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "More than 5% of API requests are returning server errors."
+
+      # Alert 3: API P95 response latency exceeds 1 second
+      - alert: OpsPulseHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(opspulse_http_request_duration_seconds_bucket{job="opspulse-api"}[5m])
+            )
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High API response latency"
+          description: "The API P95 response latency has exceeded 1 second for 5 minutes."
+
+  - name: opspulse-host-alerts
+    interval: 15s
+    rules:
+
+      # Alert 4: CPU utilization exceeds 80%
+      - alert: OpsPulseHostHighCPU
+        expr: |
+          100 * (
+            1 - avg by (instance) (
+              rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[5m])
+            )
+          ) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High CPU utilization"
+          description: "Docker Desktop Linux environment CPU usage has exceeded 80% for 5 minutes."
+
+      # Alert 5: Windows C: or D: drive has less than 10% free space
+      - alert: OpsPulseHostDiskSpaceLow
+        expr: |
+          100 * (
+            node_filesystem_avail_bytes{
+              job="node-exporter",
+              mountpoint=~"/mnt/host/[cd]"
+            }
+            /
+            node_filesystem_size_bytes{
+              job="node-exporter",
+              mountpoint=~"/mnt/host/[cd]"
+            }
+          ) < 10
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Low Windows drive capacity"
+          description: "A monitored Windows drive has less than 10% free space."

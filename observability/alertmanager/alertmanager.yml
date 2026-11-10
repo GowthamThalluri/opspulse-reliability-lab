@@ -1,0 +1,17 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: opspulse-local
+
+  group_by:
+    - alertname
+    - severity
+    - category
+
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+
+receivers:
+  - name: opspulse-local
