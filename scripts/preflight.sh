@@ -16,7 +16,9 @@ REQUIRED_SERVICES=(
   alloy
   jaeger
   node-exporter
+  alertmanager
 )
+
 
 PASSED=0
 FAILED=0

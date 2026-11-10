@@ -37,7 +37,7 @@ def test_all_services_running(healthy_containers):
 
     results = check_services(healthy_containers)
 
-    assert len(results) == 7
+    assert len(results) == 8
 
     service_statuses = {result["service"]: result["status"] for result in results}
 
@@ -150,7 +150,7 @@ def test_main_generates_json_report(
             healthy_containers,
             {
                 "status": "ok",
-                "container_count": 7,
+                "container_count": 8,
             },
         ),
     )
@@ -190,11 +190,11 @@ def test_main_generates_json_report(
 
     assert report["project"] == "opspulse-reliability-lab"
     assert report["overall_status"] == "operational"
-    assert report["docker_compose"]["container_count"] == 7
+    assert report["docker_compose"]["container_count"] == 8
 
     assert report["health_coverage"]["services_with_docker_health_checks"] == 1
 
-    assert len(report["services"]) == 7
+    assert len(report["services"]) == 8
     assert len(report["api_checks"]) == 2
 
 

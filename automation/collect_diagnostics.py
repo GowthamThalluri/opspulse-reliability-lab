@@ -27,6 +27,7 @@ REQUIRED_SERVICES = [
     "alloy",
     "jaeger",
     "node-exporter",
+    "alertmanager",
 ]
 
 API_ENDPOINTS = [
