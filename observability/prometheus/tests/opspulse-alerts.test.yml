@@ -1,0 +1,110 @@
+
+rule_files:
+  - ../alerts/opspulse-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+
+  # Test 1: API unavailable
+  - interval: 1m
+    input_series:
+      - series: 'up{job="opspulse-api", instance="api:8000"}'
+        values: '0+0x12'
+
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: OpsPulseAPIDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              category: availability
+              job: opspulse-api
+              instance: api:8000
+            exp_annotations:
+              summary: "OpsPulse API is down"
+              description: "Prometheus cannot scrape the OpsPulse API metrics endpoint."
+
+  # Test 2: HTTP 5xx error rate exceeds 5%
+  - interval: 1m
+    input_series:
+      - series: 'opspulse_http_requests_total{job="opspulse-api", method="GET", path="/synthetic", status_code="200"}'
+        values: '0+900x12'
+
+      - series: 'opspulse_http_requests_total{job="opspulse-api", method="GET", path="/synthetic", status_code="500"}'
+        values: '0+100x12'
+
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpsPulseHigh5xxErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              category: reliability
+            exp_annotations:
+              summary: "High HTTP 5xx error rate"
+              description: "More than 5% of API requests are returning server errors."
+
+  # Test 3: P95 latency exceeds 1 second
+  - interval: 1m
+    input_series:
+      - series: 'opspulse_http_request_duration_seconds_bucket{job="opspulse-api", method="GET", path="/synthetic", le="1.0"}'
+        values: '0+0x12'
+
+      - series: 'opspulse_http_request_duration_seconds_bucket{job="opspulse-api", method="GET", path="/synthetic", le="2.5"}'
+        values: '0+100x12'
+
+      - series: 'opspulse_http_request_duration_seconds_bucket{job="opspulse-api", method="GET", path="/synthetic", le="+Inf"}'
+        values: '0+100x12'
+
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpsPulseHighP95Latency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              category: performance
+            exp_annotations:
+              summary: "High API response latency"
+              description: "The API P95 response latency has exceeded 1 second for 5 minutes."
+
+  # Test 4: CPU utilization exceeds 80%
+  - interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{job="node-exporter", instance="test-host", cpu="0", mode="idle"}'
+        values: '0+6x12'
+
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpsPulseHostHighCPU
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              category: infrastructure
+              instance: test-host
+            exp_annotations:
+              summary: "High CPU utilization"
+              description: "Docker Desktop Linux environment CPU usage has exceeded 80% for 5 minutes."
+
+  # Test 5: Windows drive free space below 10%
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node-exporter", instance="test-host", mountpoint="/mnt/host/c"}'
+        values: '5+0x12'
+
+      - series: 'node_filesystem_size_bytes{job="node-exporter", instance="test-host", mountpoint="/mnt/host/c"}'
+        values: '100+0x12'
+
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpsPulseHostDiskSpaceLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              category: infrastructure
+              job: node-exporter
+              instance: test-host
+              mountpoint: /mnt/host/c
+            exp_annotations:
+              summary: "Low Windows drive capacity"
+              description: "A monitored Windows drive has less than 10% free space."
