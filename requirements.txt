@@ -7,3 +7,7 @@ opentelemetry-sdk>=1.45,<2.0
 opentelemetry-exporter-otlp-proto-http>=1.45,<2.0
 opentelemetry-instrumentation-fastapi==0.66b2
 requests>=2.32,<3
+# Security minimum versions for runtime dependencies
+msgpack>=1.2.3,<2
+setuptools>=78.1.1
+urllib3>=2.8.0,<3

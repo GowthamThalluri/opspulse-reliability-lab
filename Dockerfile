@@ -9,6 +9,11 @@ ENV PYTHONUNBUFFERED=1
 # 3. Set the working directory
 WORKDIR /app
 
+# Apply available Debian security updates
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # 4. Create a non-root application user
 RUN groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid app --no-create-home app
@@ -18,6 +23,15 @@ COPY requirements.txt .
 
 # 6. Install application dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove pip from the runtime image.
+# Application dependencies are already installed.
+RUN rm -rf \
+    /usr/local/lib/python3.13/site-packages/pip \
+    /usr/local/lib/python3.13/site-packages/pip-*.dist-info \
+    /usr/local/bin/pip \
+    /usr/local/bin/pip3 \
+    /usr/local/bin/pip3.13
 
 # 7. Copy application source code
 COPY --chown=app:app app/ ./app/
